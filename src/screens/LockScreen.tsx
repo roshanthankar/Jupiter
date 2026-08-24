@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { animate, motion, useMotionValue, useReducedMotion } from 'framer-motion'
+import { asset } from '@/lib/asset'
 import { useNav } from '@/lib/nav'
 import { useFrame } from '@/components/PhoneFrame'
 import { sheetTransition, tapTransition } from '@/lib/motion'
@@ -8,7 +9,7 @@ import { LockNotification } from '@/components/LockNotification'
 import { AppIcon } from '@/components/AppIcon'
 
 /** Wallpaper (public/wallpapers/). Drop in another image and point this at it. */
-const WALLPAPER = '/wallpapers/blue-teal-discs.jpg'
+const WALLPAPER = asset('wallpapers/blue-teal-discs.jpg')
 
 /** iOS 26 Lock Screen laid out at iPhone 17 Pro metrics (402×874, 62pt status bar). Tapping the notification opens the app. */
 export function LockScreen() {

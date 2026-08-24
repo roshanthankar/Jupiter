@@ -1,3 +1,4 @@
+import { asset } from '@/lib/asset'
 import { cn } from '@/lib/cn'
 
 /**
@@ -7,7 +8,7 @@ import { cn } from '@/lib/cn'
 export function AppIcon({ size = 38, className }: { size?: number; className?: string }) {
   return (
     <img
-      src="/app-icon.png"
+      src={asset('app-icon.png')}
       alt=""
       aria-hidden
       draggable={false}

@@ -52,6 +52,24 @@ function Content({ children, className, style, navInset = true, safeBottom = tru
 }
 Screen.Content = Content
 
+/**
+ * Opaque strip over the safe-area inset, in the screen's own colour.
+ *
+ * Screens with a <NavBar> or <TopBar> get this for free — the bar sits above the scrolling content.
+ * A screen whose header scrolls away with everything else has nothing up there, so content on its
+ * way out rides up over the clock. Put it after <Screen.Content>.
+ */
+function StatusCover() {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-x-0 top-0 z-30"
+      style={{ height: 'var(--sat)', background: 'inherit' }}
+    />
+  )
+}
+Screen.StatusCover = StatusCover
+
 /** Sticky footer area (e.g. a primary button) that respects the home indicator. */
 function Footer({ children, className }: { children: ReactNode; className?: string }) {
   return (

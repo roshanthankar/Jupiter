@@ -93,7 +93,7 @@ export function CaseList({ onPick }: { onPick?: () => void }) {
           />
           {/* V2 is the only version with an interaction, and it needs a scroll to show itself */}
           {version === 'v2' && (
-            <p className="mt-3 px-2 text-[11px] leading-4 text-ink2">Scroll to view the interaction. Best experienced on a phone.</p>
+            <p className="mt-3 px-2 text-[11px] leading-4 text-ink2">Scroll to view the interaction.</p>
           )}
         </>
       )}

@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react'
+import { asset } from '@/lib/asset'
 import { cn } from '@/lib/cn'
 
 /**
@@ -21,7 +22,7 @@ export function SFSymbol({
   className?: string
   style?: CSSProperties
 }) {
-  const url = `url(/sf/${name}.png)`
+  const url = `url(${asset(`sf/${name}.png`)})`
   return (
     <span
       role={label ? 'img' : undefined}

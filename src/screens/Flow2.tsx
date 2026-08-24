@@ -1,7 +1,8 @@
 import { useId, type ReactNode } from 'react'
 import { useNav } from '@/lib/nav'
 import { useLoan } from '@/lib/loan'
-import { Screen } from '@/components/Screen'
+import { motion, useMotionValue, useTransform } from 'framer-motion'
+import { Screen, useScrollY } from '@/components/Screen'
 import { SFSymbol } from '@/components/SFSymbol'
 import { useFrame } from '@/components/PhoneFrame'
 import { cn } from '@/lib/cn'
@@ -113,33 +114,17 @@ export function Flow2() {
 
   return (
     <Screen className="bg-canvas">
-      <Screen.Content navInset={false} style={{ paddingTop: 'var(--sat)' }}>
-        {/* Top bar — 16pt padding, same pattern as Home */}
-        <header className="flex items-center justify-between p-4">
-          <div className="flex items-center gap-2">
-            <button type="button" aria-label="Back" onClick={goBack} className="-ml-1 -my-1 flex rounded-full p-1 active:opacity-60">
-              <SFSymbol name="chevron.left" size={20} color="#30302f" />
-            </button>
-            <h1 className="font-sans text-[20px] font-bold leading-6 text-ink">{TITLE}</h1>
-          </div>
-          <div className="flex items-center gap-3">
-            <button type="button" aria-label="Filter" className="-m-1 flex rounded-full p-1 active:opacity-60">
-              <SFSymbol name="line.3.horizontal.decrease" size={20} color="#30302f" />
-            </button>
-            {!hasSidebar && (
-              <button type="button" aria-label="Cases" onClick={() => nav.present('cases')} className="-m-1 flex rounded-full p-1 active:opacity-60">
-                <SFSymbol name="line.3.horizontal" size={20} color="#30302f" />
-              </button>
-            )}
-          </div>
-        </header>
-
+      {/* Outside the scroll area, so the receipts pass under it rather than over the clock */}
+      <PaymentsBar onBack={goBack} onCases={hasSidebar ? undefined : () => nav.present('cases')} />
+      <Screen.Content navInset={false}>
         {/* On V2 the case picked in the sidebar leads and the other states follow it */}
         <div className="mt-4">
           {version === 'v1' ? (
             <ReceiptCard variant={variant} />
           ) : (
             <FoldingStack
+              // rests exactly where it starts, so the first scroll folds rather than shifts
+              inset={16}
               items={[variant, ...ORDER.filter((v) => v !== variant)].map((v) => ({ key: v, node: <ReceiptCardV2 variant={v} /> }))}
             />
           )}
@@ -150,6 +135,36 @@ export function Flow2() {
 }
 
 /* ------------------------------------------------------------------ */
+
+/** Fixed bar: title, back, and the filter. The hairline arrives once there is anything beneath it. */
+function PaymentsBar({ onBack, onCases }: { onBack: () => void; onCases?: () => void }) {
+  const fallback = useMotionValue(0)
+  const scrollY = useScrollY() ?? fallback
+  const hairline = useTransform(scrollY, [0, 12], [0, 1])
+  return (
+    <header className="relative z-10 shrink-0 bg-canvas/92 backdrop-blur-xl" style={{ paddingTop: 'var(--sat)' }}>
+      <div className="flex items-center justify-between p-4">
+        <div className="flex items-center gap-2">
+          <button type="button" aria-label="Back" onClick={onBack} className="-ml-1 -my-1 flex rounded-full p-1 active:opacity-60">
+            <SFSymbol name="chevron.left" size={20} color="#30302f" />
+          </button>
+          <h1 className="font-sans text-[20px] font-bold leading-6 text-ink">{TITLE}</h1>
+        </div>
+        <div className="flex items-center gap-3">
+          <button type="button" aria-label="Filter" className="-m-1 flex rounded-full p-1 active:opacity-60">
+            <SFSymbol name="line.3.horizontal.decrease" size={20} color="#30302f" />
+          </button>
+          {onCases && (
+            <button type="button" aria-label="Cases" onClick={onCases} className="-m-1 flex rounded-full p-1 active:opacity-60">
+              <SFSymbol name="line.3.horizontal" size={20} color="#30302f" />
+            </button>
+          )}
+        </div>
+      </div>
+      <motion.div aria-hidden className="absolute inset-x-0 bottom-0 h-px bg-[#0000001F]" style={{ opacity: hairline }} />
+    </header>
+  )
+}
 
 function ReceiptCard({ variant }: { variant: Variant }) {
   const titleId = useId()

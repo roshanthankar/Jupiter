@@ -11,12 +11,26 @@ npm run dev      # http://localhost:5173 — also reachable on your LAN IP for p
 npm run build    # static site in dist/ → drop on Vercel / Netlify / GitHub Pages
 ```
 
+## Deploying
+
+`.github/workflows/deploy.yml` builds and publishes `dist/` on every push to `main`. Enable it once
+per repository under **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+
+The build is relative (`base: './'`), so the same output works at the root of a domain and under a
+Pages project path (`/<repo>/`) without being rebuilt for either. Nothing in `public/` is imported,
+only referenced by URL, so Vite can't rewrite those paths for you — go through `asset()` in
+`src/lib/asset.ts` for anything new you add there, never a bare `/sf/…`.
+
+Everything the prototype draws lives in `public/` except the Manrope typeface, which is loaded from
+Google Fonts in `index.html`; without a network it falls back to the system sans.
+
 ## Project layout
 
 ```
 src/
   App.tsx                 PhoneFrame → NavProvider → Navigator
   lib/nav.tsx             navigation stack: push / present (sheet) / presentModal / pop / popTo / reset
+  lib/asset.ts            URL for a file in public/, honouring the base the app is served from
   lib/motion.ts           iOS easing + shared transitions
   components/
     PhoneFrame.tsx        device bezel, status bar, home indicator, safe-area CSS vars (--sat / --sab)
@@ -99,32 +113,38 @@ V1 is one card: the state the case selected, unchanged. V2 puts every state on t
 and a receipt folds away as it reaches the top rather than sliding off.
 
 Each card is sliced into three panels along the creases it marks with `data-crease` — the perforation
-and the explanatory line — and the foot turns back first, then the body, until only the header stub
-is left and that scrolls off. The angles come from scroll position rather than from an animation, so
-scrolling back up unfolds through the same geometry.
+and the explanatory line. The foot turns back first, then the body, until only the header is left;
+the next receipt, arriving at scroll speed from below, slides over that header and takes its place.
+The angles come from scroll position rather than from an animation, so scrolling back up unfolds
+through the same geometry.
 
-Panels turn *away* from the reader and stop at 90°, where they are edge-on and invisible: no panel
-can reach above its own crease or below the height the stack reserved, so nothing needs clipping in
-that direction. The stack works out what a receipt still covers from the same perspective projection
-the browser draws with, which is what keeps the next receipt exactly one `gap` below the folding one.
+The angles lead and the layout follows: the stack asks the paper how much of the screen it still
+covers and puts the next receipt exactly one gap under that. Driving it the other way — pinning with
+`position: sticky`, holding the height to scroll speed and solving back for the angles — keeps the
+gap constant to the pixel, but the paper snaps: a panel loses height as `1 − cos`, so a linear height
+means the angle has to jump the moment you start scrolling. Paper doesn't do that.
 
-Nothing here touches layout while you scroll. Each receipt keeps its natural height and the stack
-moves them with transforms, because the height a fold gives up is exactly the scroll it costs to
-fold — so the page is the same length either way, and the browser never has to reflow a screen full
-of masked, filtered paper mid-gesture. Positions are sampled on a frame loop rather than straight off
-the scroll event, since iOS Safari delivers those in bursts while a flick is coasting and a fold that
-only moves when one lands looks stepped.
+Nothing here touches layout while you scroll. Each receipt keeps its natural height for good and the
+stack moves them with transforms, because the height a fold gives up is exactly the scroll it costs
+to fold — so the page is the same length either way, and the browser never has to reflow a screen
+full of masked, filtered paper mid-gesture.
 
-Two details exist because the ticket is a masked shape with a drop-shadow emboss, and a shadow
+Three details exist because the ticket is a masked shape with a drop-shadow emboss, and a shadow
 follows the alpha:
 
 - a `data-crease` value nudges its crease further down. The ticket uses it to put the fold just past
-  the punched notches, so the circles stay whole on the stub instead of being cut in half;
+  the punched notches, so the circles stay whole on the header instead of being cut in half;
 - the last panel's clip is opened up by `EMBOSS_ROOM` at the bottom. Every other panel is cut through
   solid paper, but that one ends at the scalloped edge, and clipping flush with it sliced the shadow
-  off in a straight line right under the scallops.
+  off in a straight line right under the scallops;
+- a panel folded past upright is facing away, so the slices — which the clip flattens into the
+  elements that actually paint — hide their backfaces, or you see the print through the paper.
 
-Under Reduce Motion the fold is skipped and the receipts simply stack and scroll.
+Only the receipt that is mid-fold is built out of panels; the rest are a single flat card, or the
+header they folded down to, or nothing once the next card has covered them. Slicing all of them would
+put fifteen masked, drop-shadowed copies on screen inside five 3D contexts, which a phone
+re-rasterises until the scroll drops to a crawl. Under Reduce Motion the pin and the fold both go and
+the receipts are a plain list.
 
 ## States & cases (prototype navigation)
 

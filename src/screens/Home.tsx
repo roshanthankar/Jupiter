@@ -50,6 +50,7 @@ export function Home() {
           <EmiPendingCard />
         </div>
       </Screen.Content>
+      <Screen.StatusCover />
     </Screen>
     </AnnotationIndex>
   )

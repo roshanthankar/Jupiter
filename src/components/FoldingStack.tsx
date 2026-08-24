@@ -1,17 +1,19 @@
-import { useLayoutEffect, useRef, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
 /**
  * Receipts that fold as they scroll.
  *
- * Each card is sliced into three panels along the creases it marks with `data-crease`. When a card
+ * A folding card is sliced into three panels along the creases it marks with `data-crease`. When it
  * reaches the top of the screen it stays put and folds away from the reader — the foot first, then
- * the body — until only the header stub is left, which then scrolls off and the next receipt takes
- * its place. The fold is a function of scroll position, not an animation, so scrolling back down
- * unfolds it through exactly the same geometry.
+ * the body — until only its header is left. The next receipt, arriving at scroll speed from below,
+ * slides over that header and takes its place. The fold is a function of scroll position, not an
+ * animation, so scrolling back down unfolds it through exactly the same geometry.
  *
- * Two things fall out of folding *backwards* and stopping at 90°: a panel can never reach above its
- * own crease or below the height already reserved for it, so nothing needs clipping; and at 90° it
- * is edge-on, so it disappears without ever showing the back of the paper.
+ * The angles lead and the layout follows: the stack asks the paper how much of the screen it still
+ * covers and puts the next receipt exactly one gap under that. Driving it the other way — holding
+ * the height to scroll speed and solving back for the angles — keeps the gap constant to the pixel
+ * but makes the paper snap: a panel loses height as `1 − cos`, so a linear height means the angle
+ * has to jump the moment you start scrolling. Paper doesn't do that.
  *
  * Nothing here touches layout while you scroll. Each receipt keeps its natural height for good and
  * the stack moves them with transforms, because the height a fold gives up is exactly the scroll it
@@ -19,12 +21,12 @@ import { useLayoutEffect, useRef, type ReactNode } from 'react'
  * screen full of masked, filtered paper mid-gesture.
  */
 
-/** Panels per card — two creases, so a stub, a body and a foot. */
+/** Panels a folding card is cut into, and the creases it marks to divide them. */
 const PANELS = 3
-const FOLDS = PANELS - 1
+const CREASES = PANELS - 1
 /** Edge-on, and so invisible. */
 const MAX_ANGLE = 90
-/** Turns the paper early, so the height it gives up stays close to linear with the scroll. */
+/** Turns the paper early, so a crease is well into its fold before the next one starts. */
 const ANGLE_EASE = 0.7
 /** Share of the fold each crease gets; the remainder is the overlap that keeps the two continuous. */
 const WINDOW = 0.62
@@ -32,7 +34,7 @@ const WINDOW = 0.62
 const FALLBACK_CREASES = [0.3, 0.66]
 /** How far the paper darkens as it turns away from the light. */
 const SHADE = 0.18
-/** Viewing distance. The stack reserves space from the same projection the browser draws with. */
+/** Viewing distance — the same value the browser is drawing the fold with. */
 const PERSPECTIVE = 1200
 /** Horizontal inset of the card inside its full-width slice — the `mx-4` every receipt carries. */
 const CARD_INSET = 16
@@ -44,21 +46,36 @@ const CARD_INSET = 16
 const EMBOSS_ROOM = 28
 /** Frames to keep sampling after the last scroll event, so iOS momentum is followed to a stop. */
 const COAST_FRAMES = 14
+/** Flat until it reaches the top, panelled while it folds, then the header it folded down to. */
+type Mode = 'flat' | 'fold' | 'stub'
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v)
 const rad = (deg: number) => (deg * Math.PI) / 180
 /** Where a point `y` below the card's top, lying `depth` behind it, lands on screen. */
 const project = (y: number, depth: number) => (y * PERSPECTIVE) / (PERSPECTIVE + depth)
 
-/** Angle of one crease at overall fold progress `p`. Crease 0 is the lowest, and folds first. */
-function angleAt(p: number, order: number) {
-  const start = FOLDS > 1 ? (order * (1 - WINDOW)) / (FOLDS - 1) : 0
-  const t = clamp((p - start) / WINDOW, 0, 1)
+/** Angle of one crease at fold progress `q`. Crease 0 is the lowest, and folds first. */
+function angleAt(q: number, order: number) {
+  const start = CREASES > 1 ? (order * (1 - WINDOW)) / (CREASES - 1) : 0
+  const t = clamp((q - start) / WINDOW, 0, 1)
   return MAX_ANGLE * Math.pow(t, ANGLE_EASE)
 }
 
+/** How much of the screen a card still covers, walking it crease by crease. */
+function heightAt(h: number[], turn: number[]) {
+  let y = 0
+  let z = 0
+  let tallest = 0
+  for (let k = 0; k < PANELS; k++) {
+    y += h[k] * Math.cos(rad(turn[k]))
+    z += h[k] * Math.sin(rad(turn[k]))
+    tallest = Math.max(tallest, project(y, z))
+  }
+  return tallest
+}
+
 type Slot = {
-  outer: HTMLDivElement | null
+  section: HTMLDivElement | null
   pin: HTMLDivElement | null
   /** The clipping window for each panel, and the full card sitting behind it. */
   slices: (HTMLDivElement | null)[]
@@ -69,22 +86,19 @@ type Slot = {
   creases: (HTMLDivElement | null)[]
   /** Natural height and the three panel heights, measured flat. */
   geom: { H: number; h: number[] } | null
-  /** Where this receipt's section sits once the stack is laid out — fixed, so scrolling can't move it. */
-  y: number
   /** Last frame's numbers, so a receipt that isn't moving isn't written to. */
-  last: { shift: number; p: number }
+  last: { shift: number; q: number }
 }
 
 const newSlot = (): Slot => ({
-  outer: null,
+  section: null,
   pin: null,
   slices: new Array(PANELS).fill(null),
   papers: new Array(PANELS).fill(null),
-  groups: new Array(FOLDS).fill(null),
-  creases: new Array(FOLDS).fill(null),
+  groups: new Array(CREASES).fill(null),
+  creases: new Array(CREASES).fill(null),
   geom: null,
-  y: 0,
-  last: { shift: NaN, p: NaN },
+  last: { shift: NaN, q: NaN },
 })
 
 export interface FoldingItem {
@@ -105,22 +119,21 @@ export function FoldingStack({
 }) {
   const slots = useRef<Slot[]>([])
   const slotAt = (i: number) => (slots.current[i] ??= newSlot())
+  const [modes, setModes] = useState<Mode[]>(() => items.map(() => 'flat' as Mode))
+  const modesRef = useRef(modes)
+  /** Re-runs the writes that a render just wiped, and puts the stack back where it was. */
+  const relayout = useRef<() => void>(() => {})
 
   useLayoutEffect(() => {
     slots.current.length = items.length
     const list = slots.current
-    const first = list[0]?.outer
+    const first = list[0]?.section
     const scroller = first?.closest('[data-scroll]') as HTMLElement | null
     if (!first || !scroller) return
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-    /** Where a receipt comes to rest while it folds, measured from the scroller's own top. */
-    let foldLine = 0
-
-    /** Panel heights, read flat from the creases each card marks, and the fixed layout that follows. */
+    /** Panel heights, read flat from the creases each card marks. Rects — so, not while scrolling. */
     function measure() {
-      const scrollRect = scroller!.getBoundingClientRect()
-      let y = first!.getBoundingClientRect().top - scrollRect.top + scroller!.scrollTop
       for (const s of list) {
         const paper = s.papers[0]
         if (!paper) continue
@@ -130,72 +143,104 @@ export function FoldingStack({
         const marks = Array.from(paper.querySelectorAll<HTMLElement>('[data-crease]'))
           .map((el) => Math.round(el.getBoundingClientRect().top - top + (parseFloat(el.dataset.crease || '') || 0)))
           .filter((c) => c > 8 && c < H - 8)
-        const creases = (marks.length >= FOLDS ? marks.slice(0, FOLDS) : FALLBACK_CREASES.map((f) => Math.round(H * f)))
-          .slice(0, FOLDS)
+        const creases = (marks.length >= CREASES ? marks.slice(0, CREASES) : FALLBACK_CREASES.map((f) => Math.round(H * f)))
+          .slice(0, CREASES)
           .sort((a, b) => a - b)
         s.geom = { H, h: [creases[0], creases[1] - creases[0], H - creases[1]] }
-        s.y = y
-        s.last = { shift: NaN, p: NaN }
-        // the receipt keeps its full height for good; folding is paid for with transforms
-        if (s.outer) s.outer.style.height = `${H}px`
-        s.slices.forEach((el, i) => {
-          if (el) el.style.height = `${s.geom!.h[i]}px`
-        })
-        s.papers.forEach((el, i) => {
-          if (el && i > 0) el.style.top = `${-creases[i - 1]}px`
-        })
-        s.groups.forEach((el, i) => {
-          if (el) el.style.top = `${s.geom!.h[i]}px`
-        })
-        y += H + gap
       }
-      foldLine = parseFloat(getComputedStyle(scroller!).paddingTop || '0') + inset
     }
 
-    /** Lay the whole stack out for one scroll position. Pure maths, then transforms — no reflow. */
-    function apply(scrollTop: number) {
-      // how far the folds above have pulled everything below up the page
-      let shift = 0
+    /**
+     * The sizes a render can't carry, because React would reset them from the style prop. Runs after
+     * every render, and only writes — the numbers all come from the last `measure`.
+     */
+    function layoutPanels() {
       for (const s of list) {
         const g = s.geom
-        if (!g || !s.pin) continue
+        if (!g) continue
+        // the receipt keeps its full height for good; folding is paid for with transforms
+        if (s.section) s.section.style.height = `${g.H}px`
+        s.slices.forEach((el, i) => {
+          if (el) el.style.height = `${g.h[i]}px`
+        })
+        s.papers.forEach((el, i) => {
+          if (el && i > 0) el.style.top = `${-g.h.slice(0, i).reduce((a, b) => a + b, 0)}px`
+        })
+        s.groups.forEach((el, i) => {
+          if (el) el.style.top = `${g.h[i]}px`
+        })
+        s.last = { shift: NaN, q: NaN }
+      }
+    }
+
+    /**
+     * Lay the whole stack out for where it is right now. Two reads up front, then nothing but
+     * transforms — neither of which dirties layout, so there is no reflow to thrash.
+     */
+    function apply() {
+      const line = scroller!.getBoundingClientRect().top + inset
+      // every section has a fixed height, so the first one's position places all of them
+      let sectionTop = first!.getBoundingClientRect().top
+      // how far the folds above have pulled everything below up the page
+      let shift = 0
+      const next: Mode[] = []
+      let changed = false
+
+      for (let i = 0; i < list.length; i++) {
+        const s = list[i]
+        const g = s.geom
+        if (!g || !s.pin) {
+          next.push(modesRef.current[i] ?? 'flat')
+          continue
+        }
         const stub = g.h[0]
         const distance = Math.max(g.H - stub, 1)
-        const pin = reduce ? 0 : clamp(scrollTop + foldLine - (s.y + shift), 0, distance)
-        const p = pin / distance
+        const pin = reduce ? 0 : clamp(line - (sectionTop + shift), 0, distance)
+        const q = pin / distance
+
+        const mode: Mode = q <= 0 ? 'flat' : q >= 1 ? 'stub' : 'fold'
+        next.push(mode)
+        if (mode !== modesRef.current[i]) changed = true
 
         // the body carries the foot with it, so the foot has to give way first
-        const body = angleAt(p, 1)
-        const foot = angleAt(p, 0)
-        // where each fold's far edge ends up, so the stack knows what the receipt still covers
-        const bodyEnd = { y: stub + g.h[1] * Math.cos(rad(body)), z: g.h[1] * Math.sin(rad(body)) }
-        const footEnd = {
-          y: bodyEnd.y + g.h[2] * Math.cos(rad(body + foot)),
-          z: bodyEnd.z + g.h[2] * Math.sin(rad(body + foot)),
-        }
-        const visible = Math.max(stub, project(bodyEnd.y, bodyEnd.z), project(footEnd.y, footEnd.z))
+        const foot = angleAt(q, 0)
+        const body = angleAt(q, 1)
+        // the header never turns; each crease below it adds to whatever the one above has turned
+        const turn = [0, body, body + foot]
+        const visible = Math.max(stub, heightAt(g.h, turn))
 
         // a receipt nothing has changed for is left alone; usually only one is mid-fold
-        if (shift !== s.last.shift || p !== s.last.p) {
+        if (shift !== s.last.shift || q !== s.last.q) {
           s.pin.style.transform = `translate3d(0, ${shift + pin}px, 0)`
-          if (p !== s.last.p) {
-            const turn = [body, Math.min(body + foot, MAX_ANGLE)]
-            s.groups.forEach((el, i) => {
-              if (el) el.style.transform = `rotateX(${-(i === 0 ? body : foot)}deg)`
+          if (q !== s.last.q) {
+            const own = [body, foot]
+            s.groups.forEach((el, j) => {
+              if (el) el.style.transform = `rotateX(${-own[j]}deg)`
             })
-            // paper turned away from the light loses brightness; the foot is turned by both creases
-            s.papers.forEach((el, i) => {
-              if (el && i > 0) el.style.filter = `brightness(${1 - Math.sin(rad(turn[i - 1])) * SHADE})`
+            // paper turned from the light loses brightness, by however far it has turned in all
+            s.papers.forEach((el, j) => {
+              if (el) el.style.filter = `brightness(${1 - Math.sin(rad(Math.min(turn[j], MAX_ANGLE))) * SHADE})`
             })
-            s.creases.forEach((el, i) => {
-              if (el) el.style.opacity = `${Math.sin(rad(i === 0 ? body : foot))}`
+            s.creases.forEach((el, j) => {
+              if (el) el.style.opacity = `${Math.sin(rad(own[j]))}`
             })
           }
-          s.last = { shift, p }
+          s.last = { shift, q }
         }
 
         shift += visible + pin - g.H
+        sectionTop += g.H + gap
       }
+
+      if (changed) {
+        modesRef.current = next
+        setModes(next)
+      }
+    }
+
+    relayout.current = () => {
+      layoutPanels()
+      apply()
     }
 
     /**
@@ -205,7 +250,7 @@ export function FoldingStack({
     let frame = 0
     let coast = 0
     const tick = () => {
-      apply(scroller.scrollTop)
+      apply()
       frame = ++coast < COAST_FRAMES ? requestAnimationFrame(tick) : 0
     }
     const onScroll = () => {
@@ -214,27 +259,38 @@ export function FoldingStack({
     }
     const remeasure = () => {
       measure()
-      apply(scroller.scrollTop)
+      relayout.current()
     }
 
     remeasure()
+    // the receipts are set in Manrope; until it arrives they are laid out in a fallback and every
+    // height here is the wrong one
+    document.fonts?.ready.then(remeasure)
     scroller.addEventListener('scroll', onScroll, { passive: true })
     const ro = new ResizeObserver(remeasure)
+    ro.observe(scroller)
     list.forEach((s) => {
       if (s.papers[0]) ro.observe(s.papers[0])
     })
     window.addEventListener('resize', remeasure)
+    window.visualViewport?.addEventListener('resize', remeasure)
     return () => {
       if (frame) cancelAnimationFrame(frame)
       scroller.removeEventListener('scroll', onScroll)
       ro.disconnect()
       window.removeEventListener('resize', remeasure)
+      window.visualViewport?.removeEventListener('resize', remeasure)
     }
   }, [items, gap, inset])
+
+  // a render resets every size written above, so they go back on before the browser paints
+  useLayoutEffect(() => relayout.current())
 
   return (
     <>
       {items.map((item, i) => {
+        const mode = modes[i] ?? 'flat'
+        const folding = mode === 'fold'
         /** One panel: a window on the card, with the whole card behind it pushed up into view. */
         const slice = (panel: number) => (
           <div
@@ -244,14 +300,21 @@ export function FoldingStack({
             aria-hidden={panel > 0 || undefined}
             className="relative"
             style={{
-              clipPath: panel === PANELS - 1 ? `inset(0px 0px -${EMBOSS_ROOM}px 0px)` : 'inset(0)',
-              height: panel === 0 ? undefined : 0,
+              // the clip flattens this subtree, which makes the slice the thing that actually paints
+              // — so this is where a panel folded past upright has to be told to show nothing
+              backfaceVisibility: 'hidden',
+              clipPath:
+                panel === 0 && mode === 'flat'
+                  ? 'none'
+                  : panel === PANELS - 1
+                    ? `inset(0px 0px -${EMBOSS_ROOM}px 0px)`
+                    : 'inset(0)',
             }}
           >
             <div ref={(el) => void (slotAt(i).papers[panel] = el)} className="absolute inset-x-0 top-0">
-              {item.node}
+              {(panel === 0 || folding) && item.node}
             </div>
-            {panel < FOLDS && (
+            {panel < CREASES && (
               <div
                 ref={(el) => void (slotAt(i).creases[panel] = el)}
                 aria-hidden
@@ -276,16 +339,21 @@ export function FoldingStack({
           </div>
         )
         return (
-          <div key={item.key} ref={(el) => void (slotAt(i).outer = el)} style={{ marginBottom: gap }}>
+          <div key={item.key} ref={(el) => void (slotAt(i).section = el)} style={{ marginBottom: gap }}>
             <div
               ref={(el) => void (slotAt(i).pin = el)}
-              style={{ perspective: `${PERSPECTIVE}px`, perspectiveOrigin: '50% 0', transformStyle: 'preserve-3d' }}
+              // a 3D context costs a phone something to keep, so only the card using one has one
+              style={
+                folding
+                  ? { perspective: `${PERSPECTIVE}px`, perspectiveOrigin: '50% 0', transformStyle: 'preserve-3d' }
+                  : undefined
+              }
             >
-              <div className="relative" style={{ transformStyle: 'preserve-3d' }}>
+              <div className="relative" style={folding ? { transformStyle: 'preserve-3d' } : undefined}>
                 {slice(0)}
                 {group(
                   0,
-                  <div className="relative" style={{ transformStyle: 'preserve-3d' }}>
+                  <div className="relative" style={folding ? { transformStyle: 'preserve-3d' } : undefined}>
                     {slice(1)}
                     {group(1, <div className="relative">{slice(2)}</div>)}
                   </div>,
