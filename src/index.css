@@ -1,0 +1,133 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------ */
+/*  iOS design tokens — exposed as Tailwind utilities:                 */
+/*  bg-ios-blue, text-ios-label2, rounded-ios, ease-ios, …            */
+/* ------------------------------------------------------------------ */
+@theme {
+  --font-sans: "Manrope", -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "Helvetica Neue", Helvetica, Arial, sans-serif;
+
+  /* System colours (light) */
+  --color-ios-blue: #007aff;
+  --color-ios-green: #34c759;
+  --color-ios-red: #ff3b30;
+  --color-ios-orange: #ff9500;
+  --color-ios-yellow: #ffcc00;
+  --color-ios-purple: #af52de;
+  --color-ios-pink: #ff2d55;
+  --color-ios-teal: #5ac8fa;
+  --color-ios-indigo: #5856d6;
+  --color-ios-mint: #00c7be;
+
+  /* Jupiter brand (sampled from the app icon) */
+  --color-brand: #e36e64;
+  --color-brand-deep: #cf5f55;
+  /* brand coral darkened for AA text/links on white & light tints */
+  --color-brand-text: #b54a41;
+  --color-canvas: #f5f3ef;
+  --color-ink: #30302f;
+  /* secondary text — iOS secondaryLabel is only 3.4:1 on white, this is 6.3:1 */
+  --color-ink2: #61605f;
+
+  /* Greys */
+  --color-ios-gray: #8e8e93;
+  --color-ios-gray2: #aeaeb2;
+  --color-ios-gray3: #c7c7cc;
+  --color-ios-gray4: #d1d1d6;
+  --color-ios-gray5: #e5e5ea;
+  --color-ios-gray6: #f2f2f7;
+
+  /* Labels & fills */
+  --color-ios-label: #000000;
+  --color-ios-label2: rgb(60 60 67 / 0.6);
+  --color-ios-label3: rgb(60 60 67 / 0.3);
+  --color-ios-label4: rgb(60 60 67 / 0.18);
+  --color-ios-separator: rgb(60 60 67 / 0.29);
+  --color-ios-fill: rgb(120 120 128 / 0.2);
+  --color-ios-fill2: rgb(120 120 128 / 0.16);
+  --color-ios-fill3: rgb(118 118 128 / 0.12);
+
+  /* Backgrounds */
+  --color-ios-bg: #ffffff;
+  --color-ios-bg2: #f2f2f7;
+  --color-ios-grouped: #f2f2f7;
+  --color-ios-grouped2: #ffffff;
+
+  --radius-ios: 10px;
+  --radius-ios-lg: 14px;
+
+  --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* iOS HIG type scale — use as text-body, text-headline, etc. */
+@utility text-largetitle { font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: 0.37px; }
+@utility text-title1     { font-size: 28px; line-height: 34px; font-weight: 700; letter-spacing: 0.36px; }
+@utility text-title2     { font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: 0.35px; }
+@utility text-title3     { font-size: 20px; line-height: 25px; font-weight: 600; letter-spacing: 0.38px; }
+@utility text-headline   { font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: -0.41px; }
+@utility text-body       { font-size: 17px; line-height: 22px; letter-spacing: -0.41px; }
+@utility text-callout    { font-size: 16px; line-height: 21px; letter-spacing: -0.32px; }
+@utility text-subhead    { font-size: 15px; line-height: 20px; letter-spacing: -0.24px; }
+@utility text-footnote   { font-size: 13px; line-height: 18px; letter-spacing: -0.08px; }
+@utility text-caption1   { font-size: 12px; line-height: 16px; }
+@utility text-caption2   { font-size: 11px; line-height: 13px; letter-spacing: 0.07px; }
+
+/* Hide scrollbars but keep scrolling */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
+@layer base {
+  html, body, #root { height: 100%; }
+  body {
+    margin: 0;
+    background: #ffffff;
+    color: var(--color-ios-label);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    overscroll-behavior: none;
+    user-select: none;
+  }
+  input, textarea { user-select: text; }
+  button, [role="button"] { cursor: pointer; }
+  button:disabled { cursor: default; }
+}
+
+/* Inset grouped list separators (iOS hairline, inset to --sep-inset) */
+.ios-list > * { position: relative; }
+.ios-list > * + *::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: var(--sep-inset, 16px);
+  height: 1px;
+  background: var(--color-ios-separator);
+  transform: scaleY(0.5);
+  transform-origin: top;
+  pointer-events: none;
+}
+
+/* Home indicator: samples the backdrop (iOS-style adaptive colour); solid black where unsupported */
+.home-indicator { background: #000; }
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .home-indicator {
+    background: transparent;
+    -webkit-backdrop-filter: blur(6px) grayscale(1) invert(1) contrast(2.2);
+    backdrop-filter: blur(6px) grayscale(1) invert(1) contrast(2.2);
+  }
+}
+
+/* Keyboard focus — visible on every control, never on mouse clicks */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-brand-text);
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+}
