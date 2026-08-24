@@ -118,13 +118,12 @@ export function Flow2() {
       <PaymentsBar onBack={goBack} onCases={hasSidebar ? undefined : () => nav.present('cases')} />
       <Screen.Content navInset={false}>
         {/* On V2 the case picked in the sidebar leads and the other states follow it */}
-        <div className="mt-4">
+        {/* V2 spaces itself off the bar; the single V1 card needs the margin */}
+        <div className={version === 'v1' ? 'mt-4' : undefined}>
           {version === 'v1' ? (
             <ReceiptCard variant={variant} />
           ) : (
             <FoldingStack
-              // rests exactly where it starts, so the first scroll folds rather than shifts
-              inset={16}
               items={[variant, ...ORDER.filter((v) => v !== variant)].map((v) => ({ key: v, node: <ReceiptCardV2 variant={v} /> }))}
             />
           )}
